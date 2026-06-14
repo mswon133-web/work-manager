@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>일별 업무 정보 관리</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- ════ Firebase SDK ════ -->
+<script type="module">
+  // ══════════════════════════════════════════════════════════════
+  //  ★ 여기에 본인의 Firebase 설정값을 입력하세요 ★
+  //  Firebase Console → 프로젝트 설정 → 내 앱 → SDK 설정 및 구성
+  // ══════════════════════════════════════════════════════════════
+  const firebaseConfig = {
+    apiKey:            "AIzaSyBezyRcar2IFiiOOPdzJgntZUiT9K4bcAs",
+    authDomain:        "work-information-f5e77.firebaseapp.com",
+    projectId:         "work-information-f5e77",
+    storageBucket:     "work-information-f5e77.firebasestorage.app",
+    messagingSenderId: "903868739199",
+    appId:             "1:903868739199:web:7f97c863ad613d76c9d94a"
+  };
+  // ══════════════════════════════════════════════════════════════
+
+  import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider,
+           signInWithPopup, signOut,
+           onAuthStateChanged }                   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, collection, doc,
+           addDoc, updateDoc, deleteDoc,
+           onSnapshot, query, orderBy,
+           getDocs, writeBatch }                  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  let currentUser = null;
+  let unsubscribe = null;   // Firestore 리스너 해제용
+
+  // ── 인증 상태 감시 ──────────────────────────────────────────
+  onAuthStateChanged(auth, user => {
+    currentUser = user;
+    if (user) {
+      document.getElementById('loginSection').style.display  = 'none';
+      document.getElementById('mainSection').style.display   = 'block';
+      document.getElementById('userInfo').textContent        = `👤 ${user.displayName}`;
+      document.getElementById('userEmail').textContent       = user.email;
+      subscribeFirestore();
+    } else {
+      document.getElementById('loginSection').style.display  = 'flex';
+      document.getElementById('mainSection').style.display   = 'none';
+      document.getElementById('userInfo').textContent        = '';
+      document.getElementById('userEmail').textContent       = '';
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      window._data = [];
+      renderTable();
+    }
+  });
+
+  // ── Google 로그인 ────────────────────────────────────────────
+  window.loginWithGoogle = async function() {
+    try {
+      showToast('⏳ Google 로그인 중...', 0);
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch(e) {
+      showToast('❌ 로그인 실패: ' + e.message);
+    }
+  };
+
+  // ── 로그아웃 ─────────────────────────────────────────────────
+  window.logout = async function() {
+    if (!confirm('로그아웃 하시겠습니까?')) return;
+    await signOut(auth);
+    showToast('👋 로그아웃 되었습니다.');
+  };
+
+  // ── Firestore 실시간 구독 ─────────────────────────────────────
+  function subscribeFirestore() {
+    if (!currentUser) return;
+    const col = collection(db, 'users', currentUser.uid, 'worklog');
+    const q   = query(col, orderBy('createdAt', 'asc'));
+
+    unsubscribe = onSnapshot(q, snapshot => {
+      window._data = snapshot.docs.map(d => ({ _docId: d.id, ...d.data() }));
+      renderTable();
+    }, err => {
+      showToast('❌ 데이터 로드 오류: ' + err.message);
+    });
+  }
+
+  // ── 업무 등록 ─────────────────────────────────────────────────
+  window.addRow = async function() {
+    if (!currentUser) { showToast('⚠️ 먼저 로그인하세요.'); return; }
+
+    const dept     = document.getElementById('f_dept').value;
+    const recv     = document.getElementById('f_recv').value;
+    const cat      = document.getElementById('f_cat').value;
+    const model    = document.getElementById('f_model').value.trim();
+    const provider = document.getElementById('f_provider').value.trim();
+    const detail   = document.getElementById('f_detail').value.trim();
+
+    if (!dept)   { showToast('⚠️ 부서명을 선택하세요.'); return; }
+    if (!recv)   { showToast('⚠️ 접수방법을 선택하세요.'); return; }
+    if (!cat)    { showToast('⚠️ 구분을 선택하세요.'); return; }
+    if (!detail) { showToast('⚠️ 내역을 입력하세요.'); return; }
+
+    try {
+      const col = collection(db, 'users', currentUser.uid, 'worklog');
+      await addDoc(col, {
+        date:       todayStr(),
+        dept, recv, cat, model, provider, detail,
+        check:      false,
+        done:       'N',
+        doneDate:   '',
+        modifiedAt: '',
+        createdAt:  Date.now()
+      });
+      resetForm();
+      showToast('✅ 업무가 등록되었습니다.');
+    } catch(e) {
+      showToast('❌ 등록 실패: ' + e.message);
+    }
+  };
+
+  // ── 필드 업데이트 ──────────────────────────────────────────────
+  window.updateField = async function(docId, field, value) {
+    if (!currentUser) return;
+    const ref = doc(db, 'users', currentUser.uid, 'worklog', docId);
+    try {
+      if (field === 'done') {
+        const updates = { done: value };
+        if (value === 'Y') {
+          // 완료일이 없을 때만 오늘 날짜 설정
+          const row = (window._data||[]).find(r => r._docId === docId);
+          if (!row?.doneDate) updates.doneDate = todayStr();
+        } else {
+          updates.doneDate = '';
+        }
+        await updateDoc(ref, updates);
+      } else {
+        await updateDoc(ref, { [field]: value });
+      }
+    } catch(e) {
+      showToast('❌ 저장 실패: ' + e.message);
+    }
+  };
+
+  // ── 행 저장 (수정일시 기록) ────────────────────────────────────
+  window.saveRow = async function(docId) {
+    if (!currentUser) return;
+    // 현재 DOM 값 수집
+    const tr       = document.querySelector(`tr[data-docid="${docId}"]`);
+    if (!tr) return;
+    const ref = doc(db, 'users', currentUser.uid, 'worklog', docId);
+    try {
+      await updateDoc(ref, { modifiedAt: nowStr() });
+      showToast('💾 저장되었습니다.');
+    } catch(e) {
+      showToast('❌ 저장 실패: ' + e.message);
+    }
+  };
+
+  // ── 행 삭제 ───────────────────────────────────────────────────
+  window.deleteRow = async function(docId) {
+    if (!confirm('이 업무를 삭제하시겠습니까?')) return;
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'worklog', docId));
+      showToast('🗑️ 삭제되었습니다.');
+    } catch(e) {
+      showToast('❌ 삭제 실패: ' + e.message);
+    }
+  };
+
+  // ── 전체 삭제 ─────────────────────────────────────────────────
+  window.clearAll = async function() {
+    if (!confirm('전체 업무를 삭제하시겠습니까?')) return;
+    if (!currentUser) return;
+    try {
+      const col  = collection(db, 'users', currentUser.uid, 'worklog');
+      const snap = await getDocs(col);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      showToast('🗑️ 전체 삭제되었습니다.');
+    } catch(e) {
+      showToast('❌ 삭제 실패: ' + e.message);
+    }
+  };
+
+  // ── Excel 가져오기 ────────────────────────────────────────────
+  window.importExcel = async function(event) {
+    if (!currentUser) { showToast('⚠️ 먼저 로그인하세요.'); return; }
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      try {
+        const wb   = XLSX.read(e.target.result, { type: 'binary' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        const col   = collection(db, 'users', currentUser.uid, 'worklog');
+        const batch = writeBatch(db);
+        let imported = 0;
+
+        rows.forEach((r, idx) => {
+          if (!r['일자'] && !r['부서명']) return;
+          const doneVal = String(r['완료']||'N').trim().toUpperCase() === 'Y' ? 'Y' : 'N';
+          const ref = doc(col);
+          batch.set(ref, {
+            date:       r['일자']     || todayStr(),
+            dept:       r['부서명']   || '',
+            recv:       r['접수방법'] || '',
+            cat:        r['구분']     || '',
+            model:      r['모델명']   || '',
+            provider:   r['제공자']   || '',
+            detail:     r['내역']     || '',
+            check:      String(r['확인']).trim() === '✔' || String(r['확인']).trim() === 'true',
+            done:       doneVal,
+            doneDate:   doneVal === 'Y' ? (r['완료일']||'') : '',
+            modifiedAt: r['수정일시'] || '',
+            createdAt:  Date.now() + idx
+          });
+          imported++;
+        });
+
+        await batch.commit();
+        showToast(`✅ ${imported}건을 가져왔습니다.`);
+      } catch(err) {
+        showToast('❌ 파일 오류: ' + err.message);
+        console.error(err);
+      }
+      event.target.value = '';
+    };
+    reader.readAsBinaryString(file);
+  };
+</script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif;
+    background: #f0f4f8;
+    color: #333;
+    font-size: 13px;
+  }
+
+  /* ── 로그인 화면 ── */
+  #loginSection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a3a5c 0%, #2563ab 100%);
+    gap: 28px;
+  }
+  .login-box {
+    background: #fff;
+    border-radius: 18px;
+    padding: 48px 52px;
+    text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,.25);
+    max-width: 380px;
+    width: 90%;
+  }
+  .login-box h2 {
+    font-size: 22px;
+    color: #1a3a5c;
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+  .login-box p {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 32px;
+    line-height: 1.6;
+  }
+  .google-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #fff;
+    border: 2px solid #dadce0;
+    border-radius: 10px;
+    padding: 14px 28px;
+    font-size: 15px;
+    font-family: inherit;
+    font-weight: 700;
+    color: #3c4043;
+    cursor: pointer;
+    width: 100%;
+    transition: box-shadow .2s, background .2s;
+  }
+  .google-btn:hover { background: #f8f9fa; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  .google-icon { width: 22px; height: 22px; }
+  .login-note {
+    color: rgba(255,255,255,.75);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* ── 헤더 ── */
+  header {
+    background: linear-gradient(135deg, #1a3a5c 0%, #2563ab 100%);
+    color: #fff;
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  header h1 { font-size: 18px; letter-spacing: 1px; }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .user-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+  }
+  #userInfo  { font-size: 13px; font-weight: 700; }
+  #userEmail { font-size: 11px; opacity: .8; }
+  .date-display { font-size: 12px; opacity: .85; }
+
+  .sync-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    opacity: .85;
+  }
+  .sync-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #4ade80;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:.4; }
+  }
+
+  .btn-logout {
+    background: rgba(255,255,255,.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.4);
+    border-radius: 7px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  .btn-logout:hover { background: rgba(255,255,255,.3); }
+
+  /* ── 입력 패널 ── */
+  .input-panel {
+    background: #fff;
+    margin: 16px 16px 0;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    padding: 16px 20px;
+  }
+  .input-panel h2 {
+    font-size: 14px;
+    color: #1a3a5c;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #2563ab;
+    padding-bottom: 6px;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+    gap: 10px 14px;
+    align-items: end;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    border: 1px solid #cdd5e0;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #f8fafc;
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: #2563ab;
+    box-shadow: 0 0 0 3px rgba(37,99,171,.15);
+    background: #fff;
+  }
+  .form-group textarea { resize: vertical; min-height: 58px; }
+  .form-group.wide { grid-column: 1 / -1; }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter .15s, transform .1s;
+    white-space: nowrap;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: scale(.97); }
+  .btn-primary   { background: #2563ab; color: #fff; }
+  .btn-success   { background: #16a34a; color: #fff; }
+  .btn-warning   { background: #d97706; color: #fff; }
+  .btn-danger    { background: #dc2626; color: #fff; }
+
+  /* ── 필터 바 ── */
+  .filter-bar {
+    background: #fff;
+    margin: 10px 16px 0;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    padding: 10px 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-bar label { font-size: 12px; font-weight: 700; color: #555; }
+  .filter-bar input,
+  .filter-bar select {
+    border: 1px solid #cdd5e0;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    background: #f8fafc;
+    outline: none;
+  }
+  .stat-chips {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    background: #e0eaf8;
+    color: #1a3a5c;
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .chip.done    { background: #dcfce7; color: #166534; }
+  .chip.pending { background: #fff7ed; color: #9a3412; }
+
+  /* ── 테이블 ── */
+  .table-panel {
+    background: #fff;
+    margin: 10px 16px 18px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    overflow: hidden;
+  }
+  .table-panel h2 {
+    font-size: 14px;
+    color: #1a3a5c;
+    padding: 12px 20px 8px;
+    border-bottom: 2px solid #2563ab;
+  }
+  .table-wrap { overflow-x: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead tr { background: #1a3a5c; color: #fff; }
+  thead th {
+    padding: 10px 7px;
+    text-align: center;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: .3px;
+  }
+  tbody tr { border-bottom: 1px solid #e8ecf2; transition: background .12s; }
+  tbody tr:hover { background: #f0f6ff; }
+  tbody tr.done-row { background: #f0fdf4; }
+  tbody tr.done-row:hover { background: #dcfce7; }
+  tbody td {
+    padding: 7px 7px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  tbody td.details-cell { text-align: left; min-width: 320px; word-break: break-word; }
+
+  td select, td input[type="text"], td textarea {
+    border: 1px solid #cdd5e0;
+    border-radius: 4px;
+    padding: 3px 5px;
+    font-size: 12px;
+    font-family: inherit;
+    background: #fff;
+    width: 100%;
+  }
+  td select:focus, td input:focus, td textarea:focus {
+    outline: none; border-color: #2563ab;
+  }
+  td textarea { resize: vertical; min-height: 34px; }
+
+  .row-num { color: #888; font-size: 11px; }
+  .del-btn {
+    background: #fee2e2; color: #b91c1c;
+    border: none; border-radius: 5px;
+    padding: 3px 8px; cursor: pointer;
+    font-size: 11px; font-weight: 700;
+    transition: background .15s;
+  }
+  .del-btn:hover { background: #fca5a5; }
+  .save-btn {
+    background: #dbeafe; color: #1d4ed8;
+    border: none; border-radius: 5px;
+    padding: 3px 8px; cursor: pointer;
+    font-size: 11px; font-weight: 700;
+    display: block; width: 100%;
+    margin-bottom: 3px;
+    transition: background .15s;
+  }
+  .save-btn:hover { background: #bfdbfe; }
+  .modified-time {
+    font-size: 10px; color: #2563ab;
+    font-weight: 700; display: block;
+    margin-top: 2px; white-space: nowrap;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge-Y { background: #dcfce7; color: #166534; }
+  .badge-N { background: #fee2e2; color: #991b1b; }
+
+  .empty-state { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+
+  /* toast */
+  #toast {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: #1a3a5c; color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px; font-size: 13px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s;
+    z-index: 9999;
+    box-shadow: 0 4px 16px rgba(0,0,0,.3);
+    max-width: 320px;
+  }
+  #toast.show { opacity: 1; }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr 1fr; }
+    .form-group.wide { grid-column: 1 / -1; }
+    header h1 { font-size: 15px; }
+    .login-box { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ 로그인 화면 ═══ -->
+<div id="loginSection" style="display:flex;">
+  <div class="login-box">
+    <h2>📋 일별 업무 정보 관리</h2>
+    <p>Google 계정으로 로그인하면<br>PC와 핸드폰에서 동일한 데이터를<br>실시간으로 확인할 수 있습니다.</p>
+    <button class="google-btn" onclick="loginWithGoogle()">
+      <svg class="google-icon" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Google 계정으로 로그인
+    </button>
+  </div>
+  <div class="login-note">🔒 본인의 Google 계정으로만 접근 가능한 개인 데이터입니다</div>
+</div>
+
+<!-- ═══ 메인 화면 ═══ -->
+<div id="mainSection" style="display:none;">
+
+  <!-- 헤더 -->
+  <header>
+    <h1>📋 일별 업무 정보 관리</h1>
+    <div class="header-right">
+      <div class="sync-indicator">
+        <div class="sync-dot"></div>
+        실시간 동기화 중
+      </div>
+      <div class="date-display" id="headerDate"></div>
+      <div class="user-badge">
+        <span id="userInfo"></span>
+        <span id="userEmail"></span>
+      </div>
+      <button class="btn-logout" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <!-- 입력 패널 -->
+  <div class="input-panel">
+    <h2>✏️ 업무 등록</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>일자</label>
+        <input type="date" id="f_date" readonly style="cursor:default;background:#eef2f7;">
+      </div>
+      <div class="form-group">
+        <label>부서명</label>
+        <select id="f_dept">
+          <option value="">-- 선택 --</option>
+          <option>설계</option><option>기술</option><option>품질</option>
+          <option>경영진</option><option>공장</option><option>기타</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>접수방법</label>
+        <select id="f_recv">
+          <option value="">-- 선택 --</option>
+          <option>이메일</option><option>메신저</option><option>기타</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>구분</label>
+        <select id="f_cat">
+          <option value="">-- 선택 --</option>
+          <option>신모델</option><option>품질</option><option>기타</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>모델명</label>
+        <input type="text" id="f_model" placeholder="모델명 입력...">
+      </div>
+      <div class="form-group">
+        <label>제공자</label>
+        <input type="text" id="f_provider" placeholder="제공자 입력...">
+      </div>
+      <div class="form-group wide">
+        <label>내역</label>
+        <textarea id="f_detail" placeholder="업무 내역을 입력하세요..."></textarea>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary"  onclick="addRow()">➕ 등록</button>
+      <button class="btn btn-success"  onclick="exportExcel()">⬇️ Excel 저장</button>
+      <button class="btn btn-warning"  onclick="document.getElementById('importFile').click()">⬆️ Excel 가져오기</button>
+      <input  type="file" id="importFile" accept=".xlsx,.xls" style="display:none" onchange="importExcel(event)">
+      <button class="btn btn-danger"   onclick="clearAll()">🗑️ 전체 삭제</button>
+    </div>
+  </div>
+
+  <!-- 필터 바 -->
+  <div class="filter-bar">
+    <label>검색:</label>
+    <input type="text" id="searchInput" placeholder="내역 검색..." oninput="renderTable()" style="width:160px;">
+    <label>부서:</label>
+    <select id="filterDept" onchange="renderTable()">
+      <option value="">전체</option>
+      <option>설계</option><option>기술</option><option>품질</option>
+      <option>경영진</option><option>공장</option><option>기타</option>
+    </select>
+    <label>완료:</label>
+    <select id="filterDone" onchange="renderTable()">
+      <option value="">전체</option>
+      <option value="Y">완료(Y)</option>
+      <option value="N">미완료(N)</option>
+    </select>
+    <label>구분:</label>
+    <select id="filterCat" onchange="renderTable()">
+      <option value="">전체</option>
+      <option>신모델</option><option>품질</option><option>기타</option>
+    </select>
+    <label>제공자:</label>
+    <input type="text" id="filterProvider" placeholder="제공자 검색..." oninput="renderTable()" style="width:110px;">
+    <div class="stat-chips">
+      <span class="chip"         id="statTotal">전체 0</span>
+      <span class="chip done"    id="statDone">완료 0</span>
+      <span class="chip pending" id="statPending">미완료 0</span>
+    </div>
+  </div>
+
+  <!-- 테이블 -->
+  <div class="table-panel">
+    <h2>📊 업무 목록</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px;">No.</th>
+            <th style="width:92px;">일자</th>
+            <th style="width:66px;">부서명</th>
+            <th style="width:100px;">접수방법</th>
+            <th style="width:90px;">구분</th>
+            <th style="width:96px;">모델명</th>
+            <th style="width:88px;">제공자</th>
+            <th>내역</th>
+            <th style="width:46px;">확인</th>
+            <th style="width:52px;">완료</th>
+            <th style="width:90px;">완료일</th>
+            <th style="width:90px;">저장/수정일시</th>
+            <th style="width:44px;">삭제</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="13" class="empty-state">등록된 업무가 없습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /mainSection -->
+
+<div id="toast"></div>
+
+<script>
+// ── 전역 데이터 (Firestore 리스너가 채움) ─────────────────────
+window._data = [];
+
+// ── 날짜 유틸 ─────────────────────────────────────────────────
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function nowStr() {
+  const d = new Date();
+  return d.toISOString().slice(0,10) + ' ' + d.toTimeString().slice(0,5);
+}
+
+function updateHeaderDate() {
+  const el = document.getElementById('headerDate');
+  if (!el) return;
+  const now  = new Date();
+  const days = ['일','월','화','수','목','금','토'];
+  el.textContent = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 (${days[now.getDay()]})`;
+}
+
+// ── 폼 초기화 ─────────────────────────────────────────────────
+function resetForm() {
+  ['f_dept','f_recv','f_cat'].forEach(id => document.getElementById(id).value = '');
+  ['f_model','f_provider','f_detail'].forEach(id => document.getElementById(id).value = '');
+}
+
+// ── 테이블 렌더링 ─────────────────────────────────────────────
+function renderTable() {
+  const search         = (document.getElementById('searchInput')?.value  || '').toLowerCase();
+  const filterDept     = document.getElementById('filterDept')?.value    || '';
+  const filterDone     = document.getElementById('filterDone')?.value    || '';
+  const filterCat      = document.getElementById('filterCat')?.value     || '';
+  const filterProvider = (document.getElementById('filterProvider')?.value || '').toLowerCase();
+
+  const data = window._data || [];
+  const filtered = data.filter(r => {
+    if (filterDept     && r.dept !== filterDept) return false;
+    if (filterDone     && r.done !== filterDone) return false;
+    if (filterCat      && r.cat  !== filterCat)  return false;
+    if (filterProvider && !(r.provider||'').toLowerCase().includes(filterProvider)) return false;
+    if (search         && !(r.detail||'').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const tbody = document.getElementById('tableBody');
+  if (!tbody) return;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-state">표시할 업무가 없습니다.</td></tr>';
+  } else {
+    tbody.innerHTML = filtered.map((r, i) => {
+      const docId     = r._docId;
+      const doneClass = r.done === 'Y' ? 'done-row' : '';
+      return `
+      <tr class="${doneClass}" data-docid="${docId}">
+        <td class="row-num">${i+1}</td>
+        <td>${r.date||''}</td>
+        <td>
+          <select onchange="updateField('${docId}','dept',this.value)">
+            ${['설계','기술','품질','경영진','공장','기타'].map(d=>`<option${r.dept===d?' selected':''}>${d}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select onchange="updateField('${docId}','recv',this.value)">
+            ${['이메일','메신저','기타'].map(d=>`<option${r.recv===d?' selected':''}>${d}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select onchange="updateField('${docId}','cat',this.value)">
+            ${['신모델','품질','기타'].map(d=>`<option${r.cat===d?' selected':''}>${d}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <input type="text" value="${escHtml(r.model||'')}" placeholder="모델명"
+            onchange="updateField('${docId}','model',this.value)" style="min-width:85px;">
+        </td>
+        <td>
+          <input type="text" value="${escHtml(r.provider||'')}" placeholder="제공자"
+            onchange="updateField('${docId}','provider',this.value)" style="min-width:78px;">
+        </td>
+        <td class="details-cell">
+          <textarea rows="2" onchange="updateField('${docId}','detail',this.value)">${escHtml(r.detail||'')}</textarea>
+        </td>
+        <td>
+          <input type="checkbox" class="check-box" ${r.check?'checked':''}
+            onchange="updateField('${docId}','check',this.checked)" style="width:18px;height:18px;accent-color:#2563ab;cursor:pointer;">
+        </td>
+        <td>
+          <select onchange="updateField('${docId}','done',this.value)">
+            <option value="N"${r.done==='N'?' selected':''}>N</option>
+            <option value="Y"${r.done==='Y'?' selected':''}>Y</option>
+          </select>
+        </td>
+        <td>${r.doneDate||'-'}</td>
+        <td>
+          <button class="save-btn" onclick="saveRow('${docId}')">💾 저장</button>
+          ${r.modifiedAt ? `<span class="modified-time">${r.modifiedAt}</span>` : ''}
+        </td>
+        <td><button class="del-btn" onclick="deleteRow('${docId}')">삭제</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // 통계
+  const total   = data.length;
+  const done    = data.filter(r => r.done === 'Y').length;
+  const pending = total - done;
+  const setEl = (id, txt) => { const e = document.getElementById(id); if(e) e.textContent = txt; };
+  setEl('statTotal',   `전체 ${total}`);
+  setEl('statDone',    `완료 ${done}`);
+  setEl('statPending', `미완료 ${pending}`);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Excel 내보내기 ────────────────────────────────────────────
+function exportExcel() {
+  const data = window._data || [];
+  if (data.length === 0) { showToast('⚠️ 저장할 데이터가 없습니다.'); return; }
+
+  const headers    = ['No.','일자','부서명','접수방법','구분','모델명','제공자','내역','확인','완료','완료일','수정일시'];
+  const colWidths  = [5, 13, 10, 12, 10, 16, 12, 45, 6, 6, 13, 16];
+
+  const hStyle = {
+    font:      { bold:true, color:{rgb:'FFFFFF'}, sz:11 },
+    fill:      { patternType:'solid', fgColor:{rgb:'1A3A5C'} },
+    alignment: { horizontal:'center', vertical:'center' },
+    border:    { top:{style:'thin',color:{rgb:'888888'}}, bottom:{style:'thin',color:{rgb:'888888'}},
+                 left:{style:'thin',color:{rgb:'888888'}}, right:{style:'thin',color:{rgb:'888888'}} }
+  };
+  const mkStyle = (rgb) => ({
+    fill:      { patternType:'solid', fgColor:{rgb} },
+    alignment: { vertical:'center', wrapText:true },
+    border:    { top:{style:'thin',color:{rgb:'D0D8E8'}}, bottom:{style:'thin',color:{rgb:'D0D8E8'}},
+                 left:{style:'thin',color:{rgb:'D0D8E8'}}, right:{style:'thin',color:{rgb:'D0D8E8'}} }
+  });
+  const ctr = (s) => ({...s, alignment:{...s.alignment, horizontal:'center'}});
+
+  const ws = {};
+  headers.forEach((h,c) => { ws[XLSX.utils.encode_cell({r:0,c})] = {v:h,t:'s',s:hStyle}; });
+
+  data.forEach((r,i) => {
+    const base  = r.done==='Y' ? mkStyle('DCFCE7') : i%2===0 ? mkStyle('EEF4FB') : mkStyle('FFFFFF');
+    const cells = [
+      {v:i+1,t:'n',s:ctr(base)}, {v:r.date,t:'s',s:ctr(base)},
+      {v:r.dept,t:'s',s:ctr(base)}, {v:r.recv,t:'s',s:ctr(base)},
+      {v:r.cat,t:'s',s:ctr(base)}, {v:r.model||'',t:'s',s:ctr(base)},
+      {v:r.provider||'',t:'s',s:ctr(base)}, {v:r.detail,t:'s',s:base},
+      {v:r.check?'✔':'',t:'s',s:ctr(base)}, {v:r.done,t:'s',s:ctr(base)},
+      {v:r.doneDate||'',t:'s',s:ctr(base)}, {v:r.modifiedAt||'',t:'s',s:ctr(base)}
+    ];
+    cells.forEach((cell,c) => { ws[XLSX.utils.encode_cell({r:i+1,c})] = cell; });
+  });
+
+  ws['!ref']  = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:data.length,c:headers.length-1}});
+  ws['!cols'] = colWidths.map(w=>({wch:w}));
+  ws['!rows'] = [{hpt:22}]; for(let i=1;i<=data.length;i++) ws['!rows'].push({hpt:18});
+  ws['!freeze'] = {xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '업무내역');
+  XLSX.writeFile(wb, `업무정보_${todayStr().replace(/-/g,'')}.xlsx`);
+  showToast('✅ Excel 파일이 저장되었습니다.');
+}
+
+// ── Toast ──────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, duration=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  if (duration > 0) toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── 초기화 ────────────────────────────────────────────────────
+(function init() {
+  updateHeaderDate();
+  setInterval(updateHeaderDate, 60000);
+  const fd = document.getElementById('f_date');
+  if (fd) fd.value = todayStr();
+  renderTable();
+})();
+</script>
+</body>
+</html>
