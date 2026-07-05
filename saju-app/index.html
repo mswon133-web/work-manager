@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사주풀이 — 내 사주팔자 무료로 보기</title>
+<meta name="description" content="생년월일시로 사주팔자와 오행을 확인하고, 성격·연애·재물·직업·건강·신년운세 상세풀이를 만나보세요.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔮</text></svg>">
+<style>
+  :root{
+    --bg: #12142a;
+    --bg-plane: #0b0c1a;
+    --surface: #1b1e3d;
+    --surface-2: #232750;
+    --border: rgba(255,255,255,.09);
+    --text: #f1eee4;
+    --text-secondary: #b9b6d6;
+    --text-muted: #8785a6;
+    --gold: #e0b45e;
+    --gold-strong: #f0c76e;
+    --danger: #e34948;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  body{
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: var(--bg-plane);
+    color: var(--text);
+    line-height:1.6;
+  }
+  a{ color: inherit; }
+  .wrap{ max-width: 720px; margin:0 auto; padding: 0 18px; }
+
+  /* ── header ── */
+  header{
+    background: linear-gradient(160deg, #1a1d3f 0%, #12142a 70%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 0;
+  }
+  .nav{ display:flex; align-items:center; justify-content:space-between; }
+  .brand{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:18px; letter-spacing:.3px; }
+  .brand .mark{ font-size:20px; }
+  .nav-cta{
+    background: var(--gold); color:#22190a; font-weight:700; font-size:13px;
+    border:none; border-radius:8px; padding:8px 16px; cursor:pointer;
+  }
+
+  /* ── hero ── */
+  .hero{ padding: 48px 0 36px; text-align:center; }
+  .hero h1{ font-size: 26px; font-weight:800; letter-spacing:-.3px; margin-bottom:14px; }
+  .hero h1 span{ color: var(--gold-strong); }
+  .hero p{ color: var(--text-secondary); font-size:14px; max-width:480px; margin:0 auto 24px; }
+  .hero-badges{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:26px; }
+  .badge{
+    font-size:11.5px; color: var(--text-secondary); background: var(--surface);
+    border:1px solid var(--border); border-radius:20px; padding:5px 12px;
+  }
+  .btn-hero{
+    background: var(--gold); color:#22190a; font-weight:800; font-size:15px;
+    border:none; border-radius:10px; padding:13px 30px; cursor:pointer;
+    box-shadow: 0 8px 24px rgba(224,180,94,.25);
+  }
+  .btn-hero:hover{ filter:brightness(1.05); }
+
+  /* ── card / section shell ── */
+  .card{
+    background: var(--surface);
+    border:1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2{ font-size:15px; font-weight:800; margin-bottom:4px; }
+  .card .sub{ font-size:12px; color:var(--text-muted); margin-bottom:16px; }
+
+  /* ── form ── */
+  .form-row{ display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .form-field{ flex:1; min-width:120px; display:flex; flex-direction:column; gap:5px; }
+  .form-field label{ font-size:11.5px; color:var(--text-secondary); font-weight:700; }
+  .seg{ display:flex; background:var(--bg-plane); border-radius:9px; padding:3px; border:1px solid var(--border); }
+  .seg button{
+    flex:1; background:transparent; border:none; color:var(--text-secondary);
+    padding:8px 6px; font-size:12.5px; font-weight:700; border-radius:7px; cursor:pointer; font-family:inherit;
+  }
+  .seg button.active{ background: var(--gold); color:#22190a; }
+  input[type="date"], input[type="text"], select{
+    background: var(--bg-plane); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:9px 10px; font-size:13.5px; font-family:inherit; width:100%; outline:none;
+  }
+  input[type="date"]:focus, select:focus{ border-color: var(--gold); }
+  .check-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-secondary); margin:4px 0 14px; }
+  .check-row input{ width:16px; height:16px; accent-color: var(--gold); }
+  .btn-submit{
+    width:100%; background: var(--gold); color:#22190a; font-weight:800; font-size:15px;
+    border:none; border-radius:10px; padding:13px; cursor:pointer; margin-top:6px;
+  }
+  .err-msg{ color:var(--danger); font-size:12.5px; margin-top:8px; display:none; }
+
+  /* ── result: pillars ── */
+  #resultSection{ display:none; }
+  .pillars-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:6px; }
+  .pillar-col{ text-align:center; }
+  .pillar-col .p-label{ font-size:11px; color:var(--text-muted); margin-bottom:6px; font-weight:700; }
+  .pillar-box{
+    background: var(--bg-plane); border:1px solid var(--border); border-radius:10px;
+    padding:10px 4px; margin-bottom:6px;
+  }
+  .pillar-box .han{ font-size:19px; font-weight:800; color: var(--gold-strong); }
+  .pillar-box .ko{ font-size:11px; color:var(--text-secondary); margin-top:2px; }
+  .lunar-note{ text-align:center; font-size:11.5px; color:var(--text-muted); margin-top:8px; }
+
+  /* ── oheng bars ── */
+  .oheng-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:12.5px; }
+  .oheng-row .oh-label{ width:44px; flex-shrink:0; font-weight:700; color:var(--text-secondary); }
+  .oheng-row .oh-track{ flex:1; background:var(--bg-plane); border-radius:6px; height:10px; overflow:hidden; }
+  .oheng-row .oh-fill{ height:100%; border-radius:6px; }
+  .oheng-row .oh-count{ width:20px; text-align:right; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+
+  .oneliner{
+    background: rgba(224,180,94,.08); border:1px solid rgba(224,180,94,.25);
+    border-radius:10px; padding:14px 16px; font-size:13.5px; margin-top:14px;
+  }
+
+  /* ── premium section ── */
+  .premium-item{ margin-bottom:18px; }
+  .premium-item h3{ font-size:13.5px; color:var(--gold-strong); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+  .premium-item p{ font-size:13px; color:var(--text-secondary); }
+  .locked-wrap{ position:relative; }
+  .locked-wrap .premium-item p{ filter:blur(5px); user-select:none; }
+  .lock-overlay{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; text-align:center; padding:20px;
+    background: linear-gradient(180deg, rgba(27,30,61,0) 0%, rgba(27,30,61,.85) 35%, var(--surface) 60%);
+  }
+  .lock-overlay .lock-icon{ font-size:26px; }
+  .lock-overlay p{ font-size:13px; color:var(--text-secondary); max-width:280px; }
+  .btn-unlock{
+    background: var(--gold); color:#22190a; font-weight:800; font-size:14px;
+    border:none; border-radius:10px; padding:12px 26px; cursor:pointer;
+  }
+  .price-tag{ font-size:11.5px; color:var(--text-muted); }
+
+  /* ── ad slot ── */
+  .ad-slot{
+    border:1px dashed var(--border); border-radius:12px; padding:22px; text-align:center;
+    color:var(--text-muted); font-size:11.5px; margin: 16px 0;
+  }
+
+  /* ── modal ── */
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:999;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.show{ display:flex; }
+  .modal{
+    background: var(--surface); border:1px solid var(--border); border-radius:16px;
+    padding:26px 22px; max-width:340px; width:100%;
+  }
+  .modal h3{ font-size:16px; margin-bottom:6px; }
+  .modal .sub{ font-size:12px; color:var(--text-muted); margin-bottom:18px; }
+  .pay-option{
+    display:flex; align-items:center; justify-content:space-between; width:100%;
+    background: var(--bg-plane); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:12px 14px; font-size:13.5px; font-weight:700; margin-bottom:9px;
+    cursor:pointer; font-family:inherit;
+  }
+  .pay-option.selected{ border-color: var(--gold); }
+  .modal-actions{ display:flex; gap:8px; margin-top:14px; }
+  .btn-ghost{
+    flex:1; background:transparent; border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:9px; padding:11px; font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  .btn-pay{
+    flex:2; background: var(--gold); color:#22190a; border:none; border-radius:9px;
+    padding:11px; font-size:13.5px; font-weight:800; cursor:pointer;
+  }
+  .btn-pay[disabled]{ opacity:.5; cursor:default; }
+
+  footer{ text-align:center; padding: 30px 18px 50px; }
+  footer p{ font-size:11px; color: var(--text-muted); margin-bottom:6px; line-height:1.7; }
+
+  #toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+    background:#232750; color:var(--text); padding:11px 20px; border-radius:9px;
+    font-size:13px; opacity:0; pointer-events:none; transition:opacity .25s; z-index:1000;
+    border:1px solid var(--border); max-width:88vw; text-align:center;
+  }
+  #toast.show{ opacity:1; }
+
+  @media (max-width:420px){
+    .pillars-grid{ gap:5px; }
+    .pillar-box .han{ font-size:16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand"><span class="mark">🔮</span> 사주풀이</div>
+    <button class="nav-cta" onclick="scrollToForm()">무료로 보기</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <h1>내 사주팔자,<br><span>정확한 만세력</span>으로 무료로 확인하세요</h1>
+    <p>생년월일시만 입력하면 사주팔자 원국과 오행 분포를 바로 확인할 수 있어요. 성격·연애·재물·직업·건강·신년운세 상세풀이는 프리미엄으로 더 깊이 볼 수 있습니다.</p>
+    <div class="hero-badges">
+      <span class="badge">⏱ 30초 만에 확인</span>
+      <span class="badge">🈺 절기 기반 정밀 계산</span>
+      <span class="badge">🔒 정보 저장 없음</span>
+    </div>
+    <button class="btn-hero" onclick="scrollToForm()">사주 확인하러 가기</button>
+  </section>
+
+  <div class="card" id="formCard">
+    <h2>✏️ 생년월일시 입력</h2>
+    <div class="sub">정확한 시간을 알수록 더 정밀한 풀이가 가능해요.</div>
+
+    <div class="form-row">
+      <div class="form-field">
+        <label>양력 / 음력</label>
+        <div class="seg" id="calSeg">
+          <button type="button" class="active" data-val="solar">양력</button>
+          <button type="button" data-val="lunar">음력</button>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>성별</label>
+        <div class="seg" id="genderSeg">
+          <button type="button" class="active" data-val="male">남</button>
+          <button type="button" data-val="female">여</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-field" style="flex:2;">
+        <label>생년월일</label>
+        <input type="date" id="f_date" min="1900-01-01" max="2035-12-31">
+      </div>
+      <div class="form-field">
+        <label>태어난 시각</label>
+        <select id="f_hour">
+          <option value="">-- 시 --</option>
+          <script>for(var _h=0;_h<24;_h++)document.write('<option value="'+_h+'">'+String(_h).padStart(2,'0')+'시</option>');</script>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>분</label>
+        <select id="f_minute">
+          <option value="0">00분</option>
+          <option value="30">30분</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="check-row">
+      <input type="checkbox" id="f_timeUnknown">
+      <label for="f_timeUnknown">태어난 시간을 몰라요 (시주는 제외하고 계산돼요)</label>
+    </div>
+    <div class="check-row" id="leapRow" style="display:none;">
+      <input type="checkbox" id="f_leap">
+      <label for="f_leap">음력 윤달이에요</label>
+    </div>
+
+    <button class="btn-submit" onclick="onSubmit()">내 사주팔자 보기</button>
+    <div class="err-msg" id="errMsg"></div>
+  </div>
+
+  <div class="ad-slot" id="adSlotTop">
+    광고 영역 · <!-- 실서비스 전환 시 이 자리에 Google AdSense 등 광고 스크립트를 삽입하세요 -->
+  </div>
+
+  <section id="resultSection">
+
+    <div class="card">
+      <h2>📊 사주팔자 원국</h2>
+      <div class="sub" id="birthEcho"></div>
+      <div class="pillars-grid" id="pillarsGrid"></div>
+      <div class="lunar-note" id="lunarNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>🌿 오행(五行) 분포</h2>
+      <div class="sub">사주 여덟 글자 속 목·화·토·금·수의 균형이에요.</div>
+      <div id="ohengChart"></div>
+      <div class="oneliner" id="oneLiner"></div>
+    </div>
+
+    <div class="card">
+      <h2>✨ 상세풀이 <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(성격 · 연애 · 재물 · 직업 · 건강 · 2026년 신년운세)</span></h2>
+      <div class="sub">일간과 오행, 십성을 종합해 뽑아낸 심층 해석이에요.</div>
+
+      <div id="premiumWrap" class="locked-wrap">
+        <div class="premium-item">
+          <h3>🧭 성격 깊이보기</h3>
+          <p id="p_personality">성격 상세 내용이 여기에 표시됩니다. 성격 상세 내용이 여기에 표시됩니다. 성격 상세 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item">
+          <h3>💕 연애운</h3>
+          <p id="p_love">연애운 내용이 여기에 표시됩니다. 연애운 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item">
+          <h3>💰 재물운</h3>
+          <p id="p_wealth">재물운 내용이 여기에 표시됩니다. 재물운 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item">
+          <h3>💼 직업운</h3>
+          <p id="p_career">직업운 내용이 여기에 표시됩니다. 직업운 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item">
+          <h3>🩺 건강운</h3>
+          <p id="p_health">건강운 내용이 여기에 표시됩니다. 건강운 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item" id="yearlyBlock">
+          <h3 id="yearlyTitle">🎆 2026년 신년운세</h3>
+          <p id="p_yearly">신년운세 내용이 여기에 표시됩니다. 신년운세 내용이 여기에 표시됩니다.</p>
+        </div>
+
+        <div class="lock-overlay" id="lockOverlay">
+          <div class="lock-icon">🔒</div>
+          <p>전체 상세풀이는 프리미엄에서 확인할 수 있어요. 한 번 결제하면 이 결과를 계속 다시 볼 수 있어요.</p>
+          <button class="btn-unlock" onclick="openPayModal()">상세풀이 잠금 해제하기</button>
+          <div class="price-tag">4,900원 · 1회 결제</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ad-slot">
+      광고 영역 · <!-- 실서비스 전환 시 이 자리에 Google AdSense 등 광고 스크립트를 삽입하세요 -->
+    </div>
+
+  </section>
+
+</div>
+
+<footer>
+  <p>본 서비스의 사주 풀이는 전통 명리학 이론을 바탕으로 한 참고용 콘텐츠이며, 의학적·법률적·재정적 조언을 대체하지 않습니다.</p>
+  <p>입력하신 생년월일 정보는 서버로 전송되지 않고 이 브라우저 안에서만 계산됩니다.</p>
+</footer>
+
+<!-- 결제 모달 (프로토타입 — 실제 결제는 PG 연동 후 동작) -->
+<div class="modal-backdrop" id="payModal">
+  <div class="modal">
+    <h3>상세풀이 잠금 해제</h3>
+    <div class="sub">4,900원 결제 후 성격·연애·재물·직업·건강·신년운세를 모두 확인하세요.</div>
+    <button type="button" class="pay-option selected" data-method="kakao">🟡 카카오페이 <span>›</span></button>
+    <button type="button" class="pay-option" data-method="toss">🔵 토스페이 <span>›</span></button>
+    <button type="button" class="pay-option" data-method="card">💳 신용/체크카드 <span>›</span></button>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closePayModal()">취소</button>
+      <button class="btn-pay" id="payBtn" onclick="onPay()">4,900원 결제하기</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="vendor/lunar.js"></script>
+<script src="js/saju.js"></script>
+<script>
+  var state = { calendar: 'solar', gender: 'male', lastChart: null, lastKey: null };
+
+  document.querySelectorAll('#calSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#calSeg button').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      state.calendar = b.dataset.val;
+      document.getElementById('leapRow').style.display = state.calendar === 'lunar' ? 'flex' : 'none';
+    });
+  });
+  document.querySelectorAll('#genderSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#genderSeg button').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      state.gender = b.dataset.val;
+    });
+  });
+  document.getElementById('f_timeUnknown').addEventListener('change', function (e) {
+    var disabled = e.target.checked;
+    document.getElementById('f_hour').disabled = disabled;
+    document.getElementById('f_minute').disabled = disabled;
+  });
+
+  document.querySelectorAll('.pay-option').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.pay-option').forEach(function (x) { x.classList.remove('selected'); });
+      b.classList.add('selected');
+    });
+  });
+
+  function scrollToForm() {
+    document.getElementById('formCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function showErr(msg) {
+    var el = document.getElementById('errMsg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function onSubmit() {
+    showErr('');
+    var dateVal = document.getElementById('f_date').value;
+    if (!dateVal) { showErr('생년월일을 입력해 주세요.'); return; }
+    var parts = dateVal.split('-').map(Number);
+    var timeUnknown = document.getElementById('f_timeUnknown').checked;
+    var hourVal = document.getElementById('f_hour').value;
+    if (!timeUnknown && hourVal === '') { showErr('태어난 시각을 선택하거나, "시간을 몰라요"를 체크해 주세요.'); return; }
+
+    var input = {
+      y: parts[0], m: parts[1], d: parts[2],
+      hour: hourVal === '' ? 12 : Number(hourVal),
+      minute: Number(document.getElementById('f_minute').value || 0),
+      calendar: state.calendar,
+      isLeapMonth: document.getElementById('f_leap').checked,
+      timeUnknown: timeUnknown,
+      gender: state.gender
+    };
+
+    var chart;
+    try {
+      chart = SajuEngine.computeChart(input);
+    } catch (e) {
+      showErr('입력하신 날짜를 계산할 수 없어요. 날짜를 다시 확인해 주세요.');
+      return;
+    }
+
+    state.lastChart = chart;
+    state.lastInput = input;
+    state.lastKey = [input.y, input.m, input.d, input.hour, input.minute, input.calendar, input.gender].join('-');
+
+    renderResult(chart, input);
+    document.getElementById('resultSection').style.display = 'block';
+    setTimeout(function () {
+      document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+
+    if (isUnlocked(state.lastKey)) revealPremium(chart, input);
+  }
+
+  function renderResult(chart, input) {
+    var S = SajuEngine;
+    document.getElementById('birthEcho').textContent =
+      (input.calendar === 'lunar' ? '음력 ' : '양력 ') + input.y + '년 ' + input.m + '월 ' + input.d + '일' +
+      (input.timeUnknown ? ' · 시간 미상' : ' ' + String(input.hour).padStart(2, '0') + ':' + String(input.minute).padStart(2, '0'));
+
+    var order = [
+      { key: 'year', label: '년주' },
+      { key: 'month', label: '월주' },
+      { key: 'day', label: '일주' },
+      { key: 'time', label: '시주' }
+    ];
+    var grid = document.getElementById('pillarsGrid');
+    grid.innerHTML = order.map(function (o) {
+      var lab = S.pillarLabel(chart.pillars[o.key]);
+      return '<div class="pillar-col">' +
+        '<div class="p-label">' + o.label + '</div>' +
+        '<div class="pillar-box"><div class="han">' + lab.han + '</div><div class="ko">' + lab.ko + '</div></div>' +
+        '</div>';
+    }).join('');
+
+    document.getElementById('lunarNote').textContent = input.timeUnknown
+      ? '시간 정보가 없어 시주는 표시되지 않았어요.'
+      : '음력 ' + chart.lunarYmd.y + '년 ' + chart.lunarYmd.m + '월 ' + chart.lunarYmd.d + '일 기준';
+
+    var maxCount = Math.max.apply(null, chart.ohengCount);
+    document.getElementById('ohengChart').innerHTML = S.OHENG.map(function (name, i) {
+      var pct = maxCount ? Math.round((chart.ohengCount[i] / maxCount) * 100) : 0;
+      return '<div class="oheng-row">' +
+        '<div class="oh-label">' + name + '(' + S.OHENG_HANJA[i] + ')</div>' +
+        '<div class="oh-track"><div class="oh-fill" style="width:' + Math.max(pct, chart.ohengCount[i] ? 8 : 0) + '%; background:' + S.OHENG_COLOR[i] + ';"></div></div>' +
+        '<div class="oh-count">' + chart.ohengCount[i] + '</div>' +
+        '</div>';
+    }).join('');
+
+    var free = S.buildFreeReading(chart);
+    document.getElementById('oneLiner').textContent = free.oneLiner;
+
+    document.getElementById('yearlyTitle').textContent = '🎆 2026년(병오년) 신년운세';
+
+    // reset lock UI for a new calculation
+    document.getElementById('lockOverlay').style.display = 'flex';
+    document.getElementById('premiumWrap').classList.add('locked-wrap');
+    setPremiumPlaceholders();
+  }
+
+  function setPremiumPlaceholders() {
+    ['p_personality', 'p_love', 'p_wealth', 'p_career', 'p_health', 'p_yearly'].forEach(function (id) {
+      document.getElementById(id).textContent = '프리미엄 잠금 해제 후 상세 내용을 확인할 수 있어요.';
+    });
+  }
+
+  function revealPremium(chart, input) {
+    var S = SajuEngine;
+    var premium = S.buildPremiumReading(chart, input.gender);
+    document.getElementById('p_personality').textContent = premium.personality;
+    document.getElementById('p_love').textContent = premium.love;
+    document.getElementById('p_wealth').textContent = premium.wealth;
+    document.getElementById('p_career').textContent = premium.career;
+    document.getElementById('p_health').textContent = premium.health;
+
+    var yearly = S.buildYearlyFortune(chart, 2026);
+    document.getElementById('p_yearly').textContent = yearly ? yearly.text : '해당 연도의 신년운세는 준비 중이에요.';
+
+    document.getElementById('lockOverlay').style.display = 'none';
+    document.getElementById('premiumWrap').classList.remove('locked-wrap');
+  }
+
+  // ── unlock persistence (demo only — replace with real order/PG verification) ──
+  function unlockedSet() {
+    try { return JSON.parse(localStorage.getItem('saju_unlocked') || '[]'); } catch (e) { return []; }
+  }
+  function isUnlocked(key) { return unlockedSet().indexOf(key) !== -1; }
+  function markUnlocked(key) {
+    var s = unlockedSet();
+    if (s.indexOf(key) === -1) s.push(key);
+    localStorage.setItem('saju_unlocked', JSON.stringify(s));
+  }
+
+  function openPayModal() {
+    if (!state.lastChart) return;
+    document.getElementById('payModal').classList.add('show');
+  }
+  function closePayModal() {
+    document.getElementById('payModal').classList.remove('show');
+  }
+  function onPay() {
+    var btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    btn.textContent = '결제 처리 중...';
+    // 프로토타입: 실제 서비스에서는 이 자리에서 카카오페이/토스페이/PG사 결제창을 호출하고,
+    // 결제 승인 콜백(서버 검증) 이후에만 잠금을 해제해야 합니다.
+    setTimeout(function () {
+      markUnlocked(state.lastKey);
+      revealPremium(state.lastChart, state.lastInput);
+      closePayModal();
+      btn.disabled = false;
+      btn.textContent = '4,900원 결제하기';
+      showToast('✅ 결제가 완료됐어요. 상세풀이를 확인해 보세요!');
+    }, 900);
+  }
+
+  var toastTimer;
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 3000);
+  }
+</script>
+</body>
+</html>
