@@ -32,6 +32,15 @@
   function ganYY(idx) { return idx % 2 === 0 ? 0 : 1; } // 0=양 1=음
   function zhiYY(idx) { return idx % 2 === 0 ? 0 : 1; }
 
+  var TEN_GOD_GROUP = ['비겁', '식상', '재성', '관성', '인성'];
+
+  // 음양 구분 없이 오행 상생상극 관계만으로 묶은 5분류 (지지 궁위 해석용)
+  function tenGodGroupOf(dayGanIdx, targetOhengIdx) {
+    var d = GAN_OHENG[dayGanIdx];
+    var diff = (targetOhengIdx - d + 5) % 5;
+    return TEN_GOD_GROUP[diff];
+  }
+
   function tenGodOf(dayGanIdx, targetGanIdx) {
     var d = GAN_OHENG[dayGanIdx], t = GAN_OHENG[targetGanIdx];
     var diff = (t - d + 5) % 5;
@@ -269,6 +278,64 @@
     };
   }
 
+  // 궁위(宮位) 해석: 년주=초년, 월주=청년, 일지=중년(배우자궁), 시주=말년.
+  // 각 기둥의 지지(地支) 오행이 일간과 어떤 생극 관계인지로 그 시기의 기운을 읽는 전통적 방식.
+  var LIFE_STAGES = [
+    { key: 'year', label: '초년운', range: '유년기~20대 초반' },
+    { key: 'month', label: '청년운', range: '20대~30대' },
+    { key: 'day', label: '중년운', range: '40대~50대' },
+    { key: 'time', label: '말년운', range: '60대 이후' }
+  ];
+
+  var LIFE_STAGE_GROUP_TEXT = {
+    '비겁': '스스로 길을 개척하며 독립적으로 성장하는 흐름이 강하게 나타납니다. 남에게 기대기보다 직접 부딪히고 경험하며 배우게 되는 시기가 될 가능성이 큽니다.',
+    '식상': '재능을 표현하고 활동 반경을 넓히는 데 유리한 기운이 흐릅니다. 배우고 익힌 것을 밖으로 펼쳐 보이며 성장하는 시기입니다.',
+    '재성': '노력한 만큼 결실이 따르는 흐름으로, 경제적 기반을 다지거나 실질적인 성과를 만드는 데 유리한 시기입니다.',
+    '관성': '책임과 역할이 커지는 시기로, 조직이나 사회적 관계 안에서 인정받으며 자리를 잡아가는 흐름입니다.',
+    '인성': '배움과 휴식, 주변의 도움이 함께하는 시기로, 내면을 채우고 다음 단계를 준비하는 데 유리한 흐름입니다.'
+  };
+
+  function buildLifeStages(chart) {
+    var dayGan = chart.pillars.day.gan;
+    return LIFE_STAGES.map(function (stage) {
+      var pillar = chart.pillars[stage.key];
+      if (!pillar) return { label: stage.label, range: stage.range, text: '시간 정보가 없어 말년운은 생략됐어요.' };
+      var group = tenGodGroupOf(dayGan, ZHI_OHENG[pillar.zhi]);
+      return { label: stage.label, range: stage.range, group: group, text: LIFE_STAGE_GROUP_TEXT[group] };
+    });
+  }
+
+  var MONTH_TEN_GOD_SHORT = {
+    '비견': '주도적으로 움직이기 좋은 달이에요.',
+    '겁재': '동업이나 금전 거래는 조심하는 게 좋은 달이에요.',
+    '식신': '여유와 즐거움이 따르는 달이에요.',
+    '상관': '아이디어는 빛나지만 말은 조심할 달이에요.',
+    '편재': '뜻밖의 기회와 지출이 함께 따르는 달이에요.',
+    '정재': '차분히 실속을 챙기기 좋은 달이에요.',
+    '편관': '크고 작은 변화와 긴장이 있는 달이에요.',
+    '정관': '책임이 따르지만 성과로 이어지는 달이에요.',
+    '편인': '배움과 재충전이 필요한 달이에요.',
+    '정인': '귀인의 도움을 받기 좋은 달이에요.'
+  };
+
+  var MONTH_NAME = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+
+  // 해당 연도 1~12월(양력) 각 달의 월주를 절기 기준으로 직접 계산해 월별 총평을 만든다.
+  // (토정비결 고유의 태세수/월건수 조견표는 신뢬성 있게 확인 가능한 출처를 찾지 못해 사용하지 않음 —
+  //  대신 이미 검증된 절기 기반 만세력 엔진으로 달마다의 월주-일간 관계를 직접 산출한다.)
+  function buildMonthlyFortune(chart, year) {
+    var Solar = global.Solar;
+    var dayGan = chart.pillars.day.gan;
+    var months = [];
+    for (var m = 1; m <= 12; m++) {
+      var lunar = Solar.fromYmdHms(year, m, 15, 12, 0, 0).getLunar();
+      var monthGan = lunar.getMonthGanIndexExact();
+      var god = tenGodOf(dayGan, monthGan);
+      months.push({ label: MONTH_NAME[m - 1], tenGod: god, text: MONTH_TEN_GOD_SHORT[god] });
+    }
+    return months;
+  }
+
   global.SajuEngine = {
     GAN: GAN, GAN_HANJA: GAN_HANJA, ZHI: ZHI, ZHI_HANJA: ZHI_HANJA, ZHI_ANIMAL: ZHI_ANIMAL,
     OHENG: OHENG, OHENG_HANJA: OHENG_HANJA, OHENG_COLOR: OHENG_COLOR, OHENG_COLOR_DARK: OHENG_COLOR_DARK,
@@ -276,6 +343,8 @@
     pillarLabel: pillarLabel,
     buildFreeReading: buildFreeReading,
     buildPremiumReading: buildPremiumReading,
-    buildYearlyFortune: buildYearlyFortune
+    buildYearlyFortune: buildYearlyFortune,
+    buildLifeStages: buildLifeStages,
+    buildMonthlyFortune: buildMonthlyFortune
   };
 })(window);
