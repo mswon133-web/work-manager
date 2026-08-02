@@ -125,6 +125,16 @@
   .premium-item{ margin-bottom:18px; }
   .premium-item h3{ font-size:13.5px; color:var(--gold-strong); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
   .premium-item p{ font-size:13px; color:var(--text-secondary); }
+  .stage-row{ margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+  .stage-row:last-child{ border-bottom:none; margin-bottom:0; padding-bottom:0; }
+  .stage-row .stage-head{ display:flex; align-items:baseline; gap:7px; margin-bottom:4px; }
+  .stage-row .stage-name{ font-size:13px; font-weight:800; color:var(--text); }
+  .stage-row .stage-range{ font-size:11px; color:var(--text-muted); }
+  .stage-row p{ font-size:12.5px; color:var(--text-secondary); }
+  .month-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; }
+  .month-row{ font-size:12px; color:var(--text-secondary); line-height:1.5; }
+  .month-row .m-label{ color:var(--gold-strong); font-weight:800; margin-right:4px; }
+  @media (max-width:380px){ .month-grid{ grid-template-columns:1fr; } }
   .locked-wrap{ position:relative; }
   .locked-wrap .premium-item p{ filter:blur(5px); user-select:none; }
   .lock-overlay{
@@ -291,7 +301,7 @@
     </div>
 
     <div class="card">
-      <h2>✨ 상세풀이 <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(성격 · 연애 · 재물 · 직업 · 건강 · 2026년 신년운세)</span></h2>
+      <h2>✨ 상세풀이 <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(성격·연애·재물·직업·건강·인생흐름·2026년 신년/월별운세)</span></h2>
       <div class="sub">일간과 오행, 십성을 종합해 뽑아낸 심층 해석이에요.</div>
 
       <div id="premiumWrap" class="locked-wrap">
@@ -315,9 +325,17 @@
           <h3>🩺 건강운</h3>
           <p id="p_health">건강운 내용이 여기에 표시됩니다. 건강운 내용이 여기에 표시됩니다.</p>
         </div>
+        <div class="premium-item">
+          <h3>🧭 인생 흐름 <span style="color:var(--text-muted); font-weight:400; font-size:11.5px;">(초년·청년·중년·말년)</span></h3>
+          <div id="lifeStages"></div>
+        </div>
         <div class="premium-item" id="yearlyBlock">
           <h3 id="yearlyTitle">🎆 2026년 신년운세</h3>
           <p id="p_yearly">신년운세 내용이 여기에 표시됩니다. 신년운세 내용이 여기에 표시됩니다.</p>
+        </div>
+        <div class="premium-item">
+          <h3>🌙 2026년 월별 운세</h3>
+          <div class="month-grid" id="monthlyFortune"></div>
         </div>
 
         <div class="lock-overlay" id="lockOverlay">
@@ -492,6 +510,8 @@
     ['p_personality', 'p_love', 'p_wealth', 'p_career', 'p_health', 'p_yearly'].forEach(function (id) {
       document.getElementById(id).textContent = '프리미엄 잠금 해제 후 상세 내용을 확인할 수 있어요.';
     });
+    document.getElementById('lifeStages').innerHTML = '';
+    document.getElementById('monthlyFortune').innerHTML = '';
   }
 
   function revealPremium(chart, input) {
@@ -505,6 +525,17 @@
 
     var yearly = S.buildYearlyFortune(chart, 2026);
     document.getElementById('p_yearly').textContent = yearly ? yearly.text : '해당 연도의 신년운세는 준비 중이에요.';
+
+    document.getElementById('lifeStages').innerHTML = S.buildLifeStages(chart).map(function (s) {
+      return '<div class="stage-row">' +
+        '<div class="stage-head"><span class="stage-name">' + s.label + '</span><span class="stage-range">' + s.range + '</span></div>' +
+        '<p>' + s.text + '</p>' +
+        '</div>';
+    }).join('');
+
+    document.getElementById('monthlyFortune').innerHTML = S.buildMonthlyFortune(chart, 2026).map(function (mo) {
+      return '<div class="month-row"><span class="m-label">' + mo.label + '</span>' + mo.text + '</div>';
+    }).join('');
 
     document.getElementById('lockOverlay').style.display = 'none';
     document.getElementById('premiumWrap').classList.remove('locked-wrap');
